@@ -17,13 +17,13 @@ export const Controls = ({ isPlaying, tempo, onTempoChange, onTogglePlay }) => {
   const progressPercent = ((localTempo - 60) / 140) * 100;
 
   return (
-    <div className="flex items-center justify-between gap-6 p-6 bg-gray-900/50 backdrop-blur-sm rounded-2xl border border-gray-800">
+    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 sm:gap-6 p-4 sm:p-6 bg-gray-900/50 backdrop-blur-sm rounded-2xl border border-gray-800">
       {/* Tempo Slider */}
-      <div className="flex items-center gap-4 flex-1">
-        <label className="text-sm font-medium text-gray-400 min-w-[60px]">
+      <div className="flex items-center gap-4 flex-1 min-w-0">
+        <label className="text-sm font-medium text-gray-400 min-w-[60px] flex-shrink-0">
           TEMPO
         </label>
-        <div className="flex-1 relative">
+        <div className="flex-1 relative min-w-[120px]">
           <div className="absolute inset-0 bg-gray-800 rounded-lg pointer-events-none">
             <div
               className="h-full bg-neon-blue rounded-lg transition-all duration-150"
@@ -39,7 +39,7 @@ export const Controls = ({ isPlaying, tempo, onTempoChange, onTogglePlay }) => {
             className="relative w-full h-2 bg-transparent rounded-lg appearance-none cursor-pointer slider z-10"
           />
         </div>
-        <span className="text-lg font-mono font-bold text-neon-blue min-w-[60px] text-right glow">
+        <span className="text-lg font-mono font-bold text-neon-blue min-w-[50px] text-right glow flex-shrink-0">
           {localTempo}
         </span>
       </div>
@@ -48,7 +48,7 @@ export const Controls = ({ isPlaying, tempo, onTempoChange, onTogglePlay }) => {
       <button
         onClick={onTogglePlay}
         className={`
-          px-8 py-4 rounded-xl font-bold text-lg
+          w-full sm:w-auto px-8 py-4 rounded-xl font-bold text-lg flex-shrink-0
           transition-all duration-200 transform hover:scale-105 active:scale-95
           ${isPlaying
             ? 'bg-neon-pink text-white glow-strong hover:bg-neon-pink/90'
