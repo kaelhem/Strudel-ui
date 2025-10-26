@@ -96,6 +96,9 @@ export const Visualizer = ({ analyser, isPlaying }) => {
       draw();
     } else {
       // Draw idle state
+      const width = canvas.width / window.devicePixelRatio;
+      const height = canvas.height / window.devicePixelRatio;
+
       ctx.fillStyle = 'rgba(3, 7, 18, 1)';
       ctx.fillRect(0, 0, width, height);
 
