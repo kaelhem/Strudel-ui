@@ -1,8 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-let audioCtx = null;
-let analyserNode = null;
-
 export const useStrudel = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [tempo, setTempo] = useState(120);
@@ -11,163 +8,116 @@ export const useStrudel = () => {
   const [analyser, setAnalyser] = useState(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(null);
-  const schedulerRef = useRef(null);
-  const replRef = useRef(null);
+  const patternRef = useRef(null);
 
-  // Initialize audio context only (no Strudel yet)
+  // Initialize - just set ready
   useEffect(() => {
-    const initAudio = () => {
-      try {
-        if (!audioCtx) {
-          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-          // Create analyser
-          analyserNode = audioCtx.createAnalyser();
-          analyserNode.fftSize = 2048;
-
-          // Don't connect to destination yet - Strudel will handle that
-          console.log('Audio context created');
-        }
-
-        setAudioContext(audioCtx);
-        setAnalyser(analyserNode);
-        setReady(true);
-      } catch (err) {
-        console.error('Audio init error:', err);
-        setError(`Audio initialization failed: ${err.message}`);
-      }
-    };
-
-    initAudio();
+    console.log('[useStrudel] Initializing...');
+    setReady(true);
   }, []);
 
   // Play pattern
   const play = useCallback(async () => {
-    if (!ready || !audioContext) {
-      console.warn('Audio not ready');
+    console.log('[useStrudel] Play clicked, ready:', ready);
+
+    if (!ready) {
+      console.warn('[useStrudel] Not ready yet');
       return;
     }
 
     try {
       setError(null);
-      console.log('Starting play...');
+      console.log('[useStrudel] Starting play sequence...');
 
-      // Resume audio context
-      if (audioContext.state === 'suspended') {
-        await audioContext.resume();
-        console.log('Audio context resumed');
-      }
-
-      // Stop previous scheduler
-      if (schedulerRef.current) {
+      // Stop previous pattern
+      if (patternRef.current) {
+        console.log('[useStrudel] Stopping previous pattern');
         try {
-          schedulerRef.current.stop();
+          patternRef.current.stop();
         } catch (e) {
-          console.warn('Stop error:', e);
+          console.warn('[useStrudel] Error stopping:', e);
         }
-        schedulerRef.current = null;
+        patternRef.current = null;
       }
 
       // Import Strudel modules
-      console.log('Loading Strudel modules...');
-      const [coreModule, webaudioModule, miniModule] = await Promise.all([
-        import('@strudel/core'),
+      console.log('[useStrudel] Importing Strudel modules...');
+      const [webaudioModule, miniModule] = await Promise.all([
         import('@strudel/webaudio'),
         import('@strudel/mini')
       ]);
 
-      const { repl, evalScope } = coreModule;
-      const { webaudioOutput, initAudioOnFirstClick, getAudioContext, getDestination } = webaudioModule;
+      console.log('[useStrudel] Modules imported successfully');
+
+      const { initAudioOnFirstClick, getAudioContext } = webaudioModule;
       const { mini } = miniModule;
 
-      console.log('Modules loaded');
-
-      // Initialize Strudel audio (this creates its own audio context)
+      // Initialize audio
+      console.log('[useStrudel] Initializing audio...');
       await initAudioOnFirstClick();
-      const strudelCtx = getAudioContext();
-      console.log('Strudel audio initialized');
+      const ctx = getAudioContext();
+      console.log('[useStrudel] Audio context state:', ctx.state);
 
-      // Connect our analyser to Strudel's destination
-      try {
-        const strudelDestination = getDestination();
-        if (strudelDestination && strudelDestination.connect) {
-          strudelDestination.connect(analyserNode);
-          analyserNode.connect(strudelCtx.destination);
-          console.log('Analyser connected to Strudel output');
-        }
-      } catch (e) {
-        console.warn('Could not connect analyser:', e);
-        // Fallback: just monitor the context
-        analyserNode.connect(strudelCtx.destination);
-      }
-
-      // Create repl if needed
-      if (!replRef.current) {
-        console.log('Creating repl...');
-
-        // Load mini notation into global scope
-        await evalScope(miniModule);
-
-        replRef.current = repl({
-          defaultOutput: webaudioOutput,
-          getTime: () => strudelCtx.currentTime,
-        });
-
-        console.log('Repl created');
+      // Create analyser if not exists
+      if (!analyser) {
+        const analyserNode = ctx.createAnalyser();
+        analyserNode.fftSize = 2048;
+        analyserNode.connect(ctx.destination);
+        setAnalyser(analyserNode);
+        setAudioContext(ctx);
+        console.log('[useStrudel] Analyser created');
       }
 
       // Create pattern
       const patternCode = pattern || 'bd hh sn hh';
-      console.log('Creating pattern:', patternCode);
+      console.log('[useStrudel] Creating pattern:', patternCode);
 
-      const pat = mini(patternCode);
-      const patWithTempo = pat.cpm(tempo);
+      const pat = mini(patternCode)
+        .cpm(tempo)
+        .out();
 
-      // Start playback
-      console.log('Setting pattern...');
-      const { scheduler } = replRef.current;
-      await scheduler.setPattern(patWithTempo, true);
+      console.log('[useStrudel] Pattern created, type:', typeof pat);
 
-      schedulerRef.current = scheduler;
+      patternRef.current = pat;
       setIsPlaying(true);
-      console.log('Playing!');
+      console.log('[useStrudel] Playing!');
 
     } catch (err) {
-      console.error('Play error:', err);
+      console.error('[useStrudel] Play error:', err);
       setError(`Playback error: ${err.message}`);
       setIsPlaying(false);
     }
-  }, [pattern, tempo, audioContext, ready]);
+  }, [pattern, tempo, ready, analyser]);
 
   // Stop playback
   const stop = useCallback(() => {
+    console.log('[useStrudel] Stop clicked');
     try {
-      if (schedulerRef.current) {
-        schedulerRef.current.stop();
-        setIsPlaying(false);
-        console.log('Stopped');
+      if (patternRef.current) {
+        patternRef.current.stop();
+        patternRef.current = null;
+        console.log('[useStrudel] Stopped');
       }
+      setIsPlaying(false);
     } catch (err) {
-      console.error('Stop error:', err);
+      console.error('[useStrudel] Stop error:', err);
       setError(`Stop error: ${err.message}`);
       setIsPlaying(false);
     }
   }, []);
 
-  // Update tempo
+  // Update tempo when playing
   useEffect(() => {
-    if (isPlaying && replRef.current?.scheduler?.setCpm) {
-      try {
-        replRef.current.scheduler.setCpm(tempo);
-        console.log('Tempo updated:', tempo);
-      } catch (err) {
-        console.error('Tempo update error:', err);
-      }
+    if (isPlaying && patternRef.current) {
+      console.log('[useStrudel] Updating tempo to:', tempo);
+      // Restart with new tempo
+      play();
     }
-  }, [tempo, isPlaying]);
+  }, [tempo]);
 
   // Toggle play/stop
   const togglePlay = useCallback(() => {
+    console.log('[useStrudel] Toggle play, current state:', isPlaying);
     if (isPlaying) {
       stop();
     } else {
