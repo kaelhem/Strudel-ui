@@ -1,9 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-let strudelInitialized = false;
 let audioCtx = null;
 let analyserNode = null;
-let replInstance = null;
 
 export const useStrudel = () => {
   const [isPlaying, setIsPlaying] = useState(false);
@@ -14,94 +12,103 @@ export const useStrudel = () => {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(null);
   const schedulerRef = useRef(null);
+  const replRef = useRef(null);
 
-  // Initialize Strudel and audio
+  // Initialize audio context only (no Strudel yet)
   useEffect(() => {
-    const init = async () => {
-      if (strudelInitialized) {
+    const initAudio = () => {
+      try {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          analyserNode = audioCtx.createAnalyser();
+          analyserNode.fftSize = 2048;
+          analyserNode.connect(audioCtx.destination);
+          console.log('Audio context created');
+        }
+
         setAudioContext(audioCtx);
         setAnalyser(analyserNode);
         setReady(true);
-        return;
-      }
-
-      try {
-        console.log('Initializing Strudel...');
-
-        // Import modules
-        const { repl, evalScope } = await import('@strudel/core');
-        const { webaudioOutput, initAudioOnFirstClick, getAudioContext } = await import('@strudel/webaudio');
-        const miniModule = await import('@strudel/mini');
-
-        // Initialize audio (requires user interaction)
-        await initAudioOnFirstClick();
-        const ctx = getAudioContext();
-        audioCtx = ctx;
-
-        // Create analyser
-        analyserNode = ctx.createAnalyser();
-        analyserNode.fftSize = 2048;
-        analyserNode.connect(ctx.destination);
-
-        // Load eval scope with mini notation
-        await evalScope(miniModule);
-
-        // Create repl instance
-        replInstance = repl({
-          defaultOutput: webaudioOutput,
-          getTime: () => ctx.currentTime,
-        });
-
-        setAudioContext(ctx);
-        setAnalyser(analyserNode);
-        setReady(true);
-        strudelInitialized = true;
-
-        console.log('Strudel initialized successfully');
       } catch (err) {
-        console.error('Init failed:', err);
-        setError(`Initialization failed: ${err.message}`);
+        console.error('Audio init error:', err);
+        setError(`Audio initialization failed: ${err.message}`);
       }
     };
 
-    init();
+    initAudio();
   }, []);
 
   // Play pattern
   const play = useCallback(async () => {
-    if (!ready || !replInstance) {
-      console.warn('Not ready');
+    if (!ready || !audioContext) {
+      console.warn('Audio not ready');
       return;
     }
 
     try {
       setError(null);
-
-      // Stop previous pattern
-      if (schedulerRef.current) {
-        schedulerRef.current.stop();
-      }
+      console.log('Starting play...');
 
       // Resume audio context
       if (audioContext.state === 'suspended') {
         await audioContext.resume();
+        console.log('Audio context resumed');
       }
 
+      // Stop previous scheduler
+      if (schedulerRef.current) {
+        try {
+          schedulerRef.current.stop();
+        } catch (e) {
+          console.warn('Stop error:', e);
+        }
+        schedulerRef.current = null;
+      }
+
+      // Import Strudel modules
+      console.log('Loading Strudel modules...');
+      const [coreModule, webaudioModule, miniModule] = await Promise.all([
+        import('@strudel/core'),
+        import('@strudel/webaudio'),
+        import('@strudel/mini')
+      ]);
+
+      const { repl, evalScope } = coreModule;
+      const { webaudioOutput, initAudioOnFirstClick, getAudioContext } = webaudioModule;
+      const { mini } = miniModule;
+
+      console.log('Modules loaded');
+
+      // Initialize Strudel audio
+      await initAudioOnFirstClick();
+      console.log('Strudel audio initialized');
+
+      // Create repl if needed
+      if (!replRef.current) {
+        console.log('Creating repl...');
+
+        // Load mini notation into global scope
+        await evalScope(miniModule);
+
+        replRef.current = repl({
+          defaultOutput: webaudioOutput,
+          getTime: () => getAudioContext().currentTime,
+        });
+
+        console.log('Repl created');
+      }
+
+      // Create pattern
       const patternCode = pattern || 'bd hh sn hh';
-      console.log('Playing:', patternCode);
+      console.log('Creating pattern:', patternCode);
 
-      // Import mini to create pattern
-      const { mini } = await import('@strudel/mini');
-
-      // Create pattern from mini notation
       const pat = mini(patternCode);
-
-      // Apply tempo (cpm = cycles per minute)
       const patWithTempo = pat.cpm(tempo);
 
-      // Set pattern and start scheduler
-      const { scheduler } = replInstance;
-      await scheduler.setPattern(patWithTempo, true); // autostart = true
+      // Start playback
+      console.log('Setting pattern...');
+      const { scheduler } = replRef.current;
+      await scheduler.setPattern(patWithTempo, true);
 
       schedulerRef.current = scheduler;
       setIsPlaying(true);
@@ -109,7 +116,7 @@ export const useStrudel = () => {
 
     } catch (err) {
       console.error('Play error:', err);
-      setError(`Play error: ${err.message}`);
+      setError(`Playback error: ${err.message}`);
       setIsPlaying(false);
     }
   }, [pattern, tempo, audioContext, ready]);
@@ -124,16 +131,19 @@ export const useStrudel = () => {
       }
     } catch (err) {
       console.error('Stop error:', err);
+      setError(`Stop error: ${err.message}`);
       setIsPlaying(false);
     }
   }, []);
 
   // Update tempo
   useEffect(() => {
-    if (isPlaying && replInstance) {
-      const { scheduler } = replInstance;
-      if (scheduler && scheduler.setCpm) {
-        scheduler.setCpm(tempo);
+    if (isPlaying && replRef.current?.scheduler?.setCpm) {
+      try {
+        replRef.current.scheduler.setCpm(tempo);
+        console.log('Tempo updated:', tempo);
+      } catch (err) {
+        console.error('Tempo update error:', err);
       }
     }
   }, [tempo, isPlaying]);
