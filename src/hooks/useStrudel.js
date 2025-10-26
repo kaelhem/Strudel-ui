@@ -20,9 +20,12 @@ export const useStrudel = () => {
       try {
         if (!audioCtx) {
           audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+          // Create analyser
           analyserNode = audioCtx.createAnalyser();
           analyserNode.fftSize = 2048;
-          analyserNode.connect(audioCtx.destination);
+
+          // Don't connect to destination yet - Strudel will handle that
           console.log('Audio context created');
         }
 
@@ -74,14 +77,29 @@ export const useStrudel = () => {
       ]);
 
       const { repl, evalScope } = coreModule;
-      const { webaudioOutput, initAudioOnFirstClick, getAudioContext } = webaudioModule;
+      const { webaudioOutput, initAudioOnFirstClick, getAudioContext, getDestination } = webaudioModule;
       const { mini } = miniModule;
 
       console.log('Modules loaded');
 
-      // Initialize Strudel audio
+      // Initialize Strudel audio (this creates its own audio context)
       await initAudioOnFirstClick();
+      const strudelCtx = getAudioContext();
       console.log('Strudel audio initialized');
+
+      // Connect our analyser to Strudel's destination
+      try {
+        const strudelDestination = getDestination();
+        if (strudelDestination && strudelDestination.connect) {
+          strudelDestination.connect(analyserNode);
+          analyserNode.connect(strudelCtx.destination);
+          console.log('Analyser connected to Strudel output');
+        }
+      } catch (e) {
+        console.warn('Could not connect analyser:', e);
+        // Fallback: just monitor the context
+        analyserNode.connect(strudelCtx.destination);
+      }
 
       // Create repl if needed
       if (!replRef.current) {
@@ -92,7 +110,7 @@ export const useStrudel = () => {
 
         replRef.current = repl({
           defaultOutput: webaudioOutput,
-          getTime: () => getAudioContext().currentTime,
+          getTime: () => strudelCtx.currentTime,
         });
 
         console.log('Repl created');
