@@ -10,6 +10,8 @@ function App() {
     tempo,
     pattern,
     analyser,
+    ready,
+    error,
     setTempo,
     setPattern,
     togglePlay,
@@ -18,6 +20,13 @@ function App() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 p-4 md:p-8">
       <div className="max-w-5xl mx-auto space-y-6">
+
+        {/* Error Display */}
+        {error && (
+          <div className="bg-red-900/20 border border-red-500/50 rounded-xl p-4 text-red-300 text-sm">
+            <strong>Error:</strong> {error}
+          </div>
+        )}
 
         {/* Header */}
         <header className="text-center py-8">

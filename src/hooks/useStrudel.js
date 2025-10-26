@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 let strudelInitialized = false;
 let audioCtx = null;
 let analyserNode = null;
-let miniApi = null;
+let replInstance = null;
 
 export const useStrudel = () => {
   const [isPlaying, setIsPlaying] = useState(false);
@@ -12,11 +12,12 @@ export const useStrudel = () => {
   const [audioContext, setAudioContext] = useState(null);
   const [analyser, setAnalyser] = useState(null);
   const [ready, setReady] = useState(false);
+  const [error, setError] = useState(null);
   const schedulerRef = useRef(null);
 
-  // Initialize Strudel
+  // Initialize Strudel and audio
   useEffect(() => {
-    const initStrudel = async () => {
+    const init = async () => {
       if (strudelInitialized) {
         setAudioContext(audioCtx);
         setAnalyser(analyserNode);
@@ -25,12 +26,16 @@ export const useStrudel = () => {
       }
 
       try {
-        // Import mini API
-        const mini = await import('@strudel/mini');
-        miniApi = mini;
+        console.log('Initializing Strudel...');
 
-        // Initialize audio - this will wait for user interaction
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        // Import modules
+        const { repl, evalScope } = await import('@strudel/core');
+        const { webaudioOutput, initAudioOnFirstClick, getAudioContext } = await import('@strudel/webaudio');
+        const miniModule = await import('@strudel/mini');
+
+        // Initialize audio (requires user interaction)
+        await initAudioOnFirstClick();
+        const ctx = getAudioContext();
         audioCtx = ctx;
 
         // Create analyser
@@ -38,95 +43,100 @@ export const useStrudel = () => {
         analyserNode.fftSize = 2048;
         analyserNode.connect(ctx.destination);
 
+        // Load eval scope with mini notation
+        await evalScope(miniModule);
+
+        // Create repl instance
+        replInstance = repl({
+          defaultOutput: webaudioOutput,
+          getTime: () => ctx.currentTime,
+        });
+
         setAudioContext(ctx);
         setAnalyser(analyserNode);
         setReady(true);
         strudelInitialized = true;
 
-        console.log('Strudel initialized');
-      } catch (error) {
-        console.error('Failed to initialize Strudel:', error);
+        console.log('Strudel initialized successfully');
+      } catch (err) {
+        console.error('Init failed:', err);
+        setError(`Initialization failed: ${err.message}`);
       }
     };
 
-    initStrudel();
+    init();
   }, []);
 
   // Play pattern
   const play = useCallback(async () => {
-    if (!audioContext || !ready) {
-      console.warn('Strudel not ready yet');
+    if (!ready || !replInstance) {
+      console.warn('Not ready');
       return;
     }
 
     try {
-      // Stop previous scheduler
+      setError(null);
+
+      // Stop previous pattern
       if (schedulerRef.current) {
-        try {
-          await schedulerRef.current.stop();
-        } catch (e) {
-          console.warn('Error stopping previous scheduler:', e);
-        }
+        schedulerRef.current.stop();
       }
 
-      // Resume audio context if suspended
+      // Resume audio context
       if (audioContext.state === 'suspended') {
         await audioContext.resume();
       }
 
-      // Import required functions
-      const { mini, evalScope } = await import('@strudel/mini');
-      const { getAudioContext, initAudioOnFirstClick, webaudioOutput } = await import('@strudel/webaudio');
-
-      // Make sure audio is initialized
-      await initAudioOnFirstClick();
-
-      // Evaluate the pattern
       const patternCode = pattern || 'bd hh sn hh';
-      console.log('Evaluating pattern:', patternCode);
+      console.log('Playing:', patternCode);
 
-      // Use mini to evaluate
-      const evaluated = await evalScope(
-        mini(patternCode),
-        {}
-      );
+      // Import mini to create pattern
+      const { mini } = await import('@strudel/mini');
 
-      // Set tempo and output
-      const withSettings = evaluated
-        .cpm(tempo)
-        .out();
+      // Create pattern from mini notation
+      const pat = mini(patternCode);
 
-      // Start the scheduler
-      schedulerRef.current = withSettings;
+      // Apply tempo (cpm = cycles per minute)
+      const patWithTempo = pat.cpm(tempo);
 
+      // Set pattern and start scheduler
+      const { scheduler } = replInstance;
+      await scheduler.setPattern(patWithTempo, true); // autostart = true
+
+      schedulerRef.current = scheduler;
       setIsPlaying(true);
-      console.log('Pattern playing');
-    } catch (error) {
-      console.error('Error playing pattern:', error);
+      console.log('Playing!');
+
+    } catch (err) {
+      console.error('Play error:', err);
+      setError(`Play error: ${err.message}`);
       setIsPlaying(false);
     }
   }, [pattern, tempo, audioContext, ready]);
 
   // Stop playback
-  const stop = useCallback(async () => {
-    if (schedulerRef.current) {
-      try {
-        await schedulerRef.current.stop();
+  const stop = useCallback(() => {
+    try {
+      if (schedulerRef.current) {
+        schedulerRef.current.stop();
+        setIsPlaying(false);
         console.log('Stopped');
-      } catch (error) {
-        console.error('Error stopping:', error);
       }
+    } catch (err) {
+      console.error('Stop error:', err);
+      setIsPlaying(false);
     }
-    setIsPlaying(false);
   }, []);
 
-  // Update tempo when playing
+  // Update tempo
   useEffect(() => {
-    if (isPlaying && schedulerRef.current) {
-      // Restart with new tempo
-      play();
+    if (isPlaying && replInstance) {
+      const { scheduler } = replInstance;
+      if (scheduler && scheduler.setCpm) {
+        scheduler.setCpm(tempo);
+      }
     }
-  }, [tempo]);
+  }, [tempo, isPlaying]);
 
   // Toggle play/stop
   const togglePlay = useCallback(() => {
@@ -144,6 +154,7 @@ export const useStrudel = () => {
     audioContext,
     analyser,
     ready,
+    error,
     setTempo,
     setPattern,
     play,
