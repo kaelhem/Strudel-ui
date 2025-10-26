@@ -13,6 +13,9 @@ export const Controls = ({ isPlaying, tempo, onTempoChange, onTogglePlay }) => {
     onTempoChange(newTempo);
   };
 
+  // Calculate progress percentage
+  const progressPercent = ((localTempo - 60) / 140) * 100;
+
   return (
     <div className="flex items-center justify-between gap-6 p-6 bg-gray-900/50 backdrop-blur-sm rounded-2xl border border-gray-800">
       {/* Tempo Slider */}
@@ -21,16 +24,19 @@ export const Controls = ({ isPlaying, tempo, onTempoChange, onTogglePlay }) => {
           TEMPO
         </label>
         <div className="flex-1 relative">
+          <div className="absolute inset-0 bg-gray-800 rounded-lg pointer-events-none">
+            <div
+              className="h-full bg-neon-blue rounded-lg transition-all duration-150"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
           <input
             type="range"
             min="60"
             max="200"
             value={localTempo}
             onChange={handleTempoChange}
-            className="w-full h-2 bg-gray-800 rounded-lg appearance-none cursor-pointer slider"
-            style={{
-              background: `linear-gradient(to right, #00d9ff 0%, #00d9ff ${((localTempo - 60) / 140) * 100}%, #1f2937 ${((localTempo - 60) / 140) * 100}%, #1f2937 100%)`
-            }}
+            className="relative w-full h-2 bg-transparent rounded-lg appearance-none cursor-pointer slider z-10"
           />
         </div>
         <span className="text-lg font-mono font-bold text-neon-blue min-w-[60px] text-right glow">
